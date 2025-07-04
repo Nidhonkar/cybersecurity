@@ -1,54 +1,43 @@
-import pandas as pd
-import numpy as np
+from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix, roc_curve, auc
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 
-# ------------------
-# Core data helpers
-# ------------------
-CATEGORICAL_COLS = [
-    'Age_Group','Gender','Department','Job_Level','Tenure','Work_Arrangement',
-    'Employment_Type','Training_Recency','Role_Specific_Training',
-    'Password_Change_Freq','MFA_Use','Personal_Device_Use',
-    'Report_Suspicious_Email','Admin_Privileges',
-    'Incidents_Caused_Category'
-]
+def encode_labels(df, categorical_cols):
+    df_encoded = df.copy()
+    encoders = {}
+    for col in categorical_cols:
+        enc = LabelEncoder()
+        df_encoded[col] = enc.fit_transform(df_encoded[col].astype(str))
+        encoders[col] = enc
+    return df_encoded, encoders
 
-TARGET_CLASS = 'Phishing_Pass'
-TARGET_REG   = 'Phishing_Score'
+def get_classifiers():
+    return {
+        'KNN': KNeighborsClassifier(),
+        'Decision Tree': DecisionTreeClassifier(random_state=42),
+        'Random Forest': RandomForestClassifier(random_state=42),
+        'GBRT': GradientBoostingClassifier(random_state=42)
+    }
 
-def load_data(path, uploaded_file=None):
-    """Return df from uploaded file or default path."""
-    if uploaded_file is not None:
-        df = pd.read_csv(uploaded_file)
-    else:
-        df = pd.read_csv(path)
-    return df
-
-# ------------------
-# Pre‑processing
-# ------------------
-def preprocess_for_classification(df):
-    """Return X,y after minimal preprocessing (one‑hot for categoricals)."""
-    X = df.drop(columns=[TARGET_CLASS])
-    y = df[TARGET_CLASS].map({'Yes':1,'No':0})
-    X_enc = pd.get_dummies(X, columns=CATEGORICAL_COLS, drop_first=True)
-    return X_enc, y
-
-def preprocess_for_regression(df):
-    """Return X,y for regression w/out target cols."""
-    X = df.drop(columns=[TARGET_REG])
-    y = df[TARGET_REG]
-    X_enc = pd.get_dummies(X, columns=CATEGORICAL_COLS + [TARGET_CLASS], drop_first=True)
-    return X_enc, y
-
-# ------------------
-# Generic metrics
-# ------------------
-def compute_clf_metrics(y_true, y_pred):
-    return dict(
-        accuracy=accuracy_score(y_true, y_pred),
-        precision=precision_score(y_true, y_pred, zero_division=0),
-        recall=recall_score(y_true, y_pred, zero_division=0),
-        f1=f1_score(y_true, y_pred, zero_division=0)
-    )
+def train_and_evaluate(X, y):
+    results = {}
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, stratify=y, random_state=42)
+    classifiers = get_classifiers()
+    for name, clf in classifiers.items():
+        clf.fit(X_train, y_train)
+        y_pred = clf.predict(X_test)
+        results[name] = {
+            'model': clf,
+            'train_acc': clf.score(X_train, y_train),
+            'test_acc': clf.score(X_test, y_test),
+            'precision': precision_score(y_test, y_pred, average='weighted'),
+            'recall': recall_score(y_test, y_pred, average='weighted'),
+            'f1': f1_score(y_test, y_pred, average='weighted'),
+            'conf_matrix': confusion_matrix(y_test, y_pred),
+            'y_pred': y_pred,
+            'y_test': y_test
+        }
+    return results
